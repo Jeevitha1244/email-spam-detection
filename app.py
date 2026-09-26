@@ -187,7 +187,7 @@ if "token" not in st.session_state:
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
         key="google_login",
-        extra_params={
+        extras_params={
             "response_type": "code",
             "access_type": "offline",
             "prompt": "consent"
