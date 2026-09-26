@@ -2,6 +2,7 @@ import base64
 import streamlit as st
 import joblib
 
+from bs4 import BeautifulSoup
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -54,16 +55,18 @@ oauth2 = OAuth2Component(
 
 
 # --------------------------------------------------
-# EMAIL BODY
+# EMAIL BODY EXTRACTION
 # --------------------------------------------------
 
 def get_email_body(payload):
 
     body = ""
 
+    # Email contains multiple parts
     if "parts" in payload:
 
         for part in payload["parts"]:
+
             body += get_email_body(part)
 
     else:
@@ -75,13 +78,30 @@ def get_email_body(payload):
 
             try:
 
-                decoded = base64.urlsafe_b64decode(data).decode(
+                decoded = base64.urlsafe_b64decode(
+                    data
+                ).decode(
                     "utf-8",
                     errors="ignore"
                 )
 
+                # Plain text email
                 if mime_type == "text/plain":
+
                     body += decoded
+
+                # HTML email
+                elif mime_type == "text/html":
+
+                    soup = BeautifulSoup(
+                        decoded,
+                        "html.parser"
+                    )
+
+                    body += soup.get_text(
+                        separator=" ",
+                        strip=True
+                    )
 
             except Exception:
                 pass
@@ -136,7 +156,9 @@ def get_all_messages(service):
             response.get("messages", [])
         )
 
-        page_token = response.get("nextPageToken")
+        page_token = response.get(
+            "nextPageToken"
+        )
 
         if not page_token:
             break
@@ -145,7 +167,7 @@ def get_all_messages(service):
 
 
 # --------------------------------------------------
-# HEADER VALUE
+# GET HEADER VALUE
 # --------------------------------------------------
 
 def get_header(headers, header_name):
@@ -153,7 +175,11 @@ def get_header(headers, header_name):
     for header in headers:
 
         if header.get("name", "").lower() == header_name.lower():
-            return header.get("value", "")
+
+            return header.get(
+                "value",
+                ""
+            )
 
     return ""
 
@@ -208,9 +234,13 @@ if "token" not in st.session_state:
 # CONNECTED USER
 # --------------------------------------------------
 
-st.success("✅ Gmail connected successfully!")
+st.success(
+    "✅ Gmail connected successfully!"
+)
 
-st.write("You can now classify your Gmail messages.")
+st.write(
+    "You can now classify your Gmail messages."
+)
 
 
 # --------------------------------------------------
@@ -232,18 +262,24 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
 
     try:
 
-        # Load trained ML model
-        model = joblib.load(MODEL_PATH)
+        # Load trained machine-learning model
+        model = joblib.load(
+            MODEL_PATH
+        )
 
         # Connect to Gmail
         service = get_gmail_service(
             st.session_state["token"]
         )
 
-        st.info("Getting your Gmail messages...")
+        st.info(
+            "Getting your Gmail messages..."
+        )
 
-        # Get messages from Inbox and Spam
-        messages = get_all_messages(service)
+        # Get Gmail messages
+        messages = get_all_messages(
+            service
+        )
 
         total = len(messages)
 
@@ -264,9 +300,12 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
 
         progress = st.progress(0)
 
+        # --------------------------------------------------
+        # PROCESS EACH EMAIL
+        # --------------------------------------------------
+
         for index, message in enumerate(messages):
 
-            # Get complete email
             email_data = service.users().messages().get(
                 userId="me",
                 id=message["id"],
@@ -296,31 +335,46 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
             )
 
             if not sender:
+
                 sender = "Unknown Sender"
 
             if not subject:
+
                 subject = "No Subject"
 
-            # Get email body
-            body = get_email_body(payload)
+            # Get complete email body
+            body = get_email_body(
+                payload
+            )
 
-            # Combine subject and body
+            # Combine subject + body
             email_text = (
                 subject + " " + body
             ).strip()
 
-            # Use Gmail snippet if body is unavailable
-            if not email_text:
+            # If body could not be extracted,
+            # use Gmail snippet as fallback
+            if not body.strip():
 
-                email_text = email_data.get(
-                    "snippet",
-                    ""
-                )
+                email_text = (
+                    subject + " " +
+                    email_data.get(
+                        "snippet",
+                        ""
+                    )
+                ).strip()
 
-            # Predict using trained model
+            # --------------------------------------------------
+            # MODEL PREDICTION
+            # --------------------------------------------------
+
             prediction = model.predict(
                 [email_text]
             )[0]
+
+            # --------------------------------------------------
+            # DISPLAY EMAIL
+            # --------------------------------------------------
 
             st.divider()
 
@@ -336,13 +390,17 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
 
             if str(prediction).lower() == "spam":
 
-                st.error("🚨 SPAM")
+                st.error(
+                    "🚨 SPAM"
+                )
 
                 spam_count += 1
 
             else:
 
-                st.success("✅ NOT SPAM")
+                st.success(
+                    "✅ NOT SPAM"
+                )
 
                 not_spam_count += 1
 
@@ -351,12 +409,14 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
             )
 
         # --------------------------------------------------
-        # SUMMARY
+        # CLASSIFICATION SUMMARY
         # --------------------------------------------------
 
         st.divider()
 
-        st.subheader("📊 Classification Summary")
+        st.subheader(
+            "📊 Classification Summary"
+        )
 
         st.write(
             "🚨 Spam:",
@@ -377,11 +437,21 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
             "✅ All Gmail messages have been classified!"
         )
 
+
+    # --------------------------------------------------
+    # GMAIL API ERROR
+    # --------------------------------------------------
+
     except HttpError as e:
 
         st.error(
             f"Gmail API error: {e}"
         )
+
+
+    # --------------------------------------------------
+    # OTHER ERROR
+    # --------------------------------------------------
 
     except Exception as e:
 
