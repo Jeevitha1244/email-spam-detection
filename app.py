@@ -126,9 +126,10 @@ def get_all_messages(service):
 
         response = service.users().messages().list(
             userId="me",
-            q="-in:spam -in:trash",
+            q="-in:trash",
             maxResults=500,
-            pageToken=page_token
+            pageToken=page_token,
+            includeSpamTrash=True
         ).execute()
 
         all_messages.extend(
@@ -231,14 +232,17 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
 
     try:
 
+        # Load trained ML model
         model = joblib.load(MODEL_PATH)
 
+        # Connect to Gmail
         service = get_gmail_service(
             st.session_state["token"]
         )
 
         st.info("Getting your Gmail messages...")
 
+        # Get messages from Inbox and Spam
         messages = get_all_messages(service)
 
         total = len(messages)
@@ -262,6 +266,7 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
 
         for index, message in enumerate(messages):
 
+            # Get complete email
             email_data = service.users().messages().get(
                 userId="me",
                 id=message["id"],
@@ -278,11 +283,13 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
                 []
             )
 
+            # Get sender
             sender = get_header(
                 headers,
                 "from"
             )
 
+            # Get subject
             subject = get_header(
                 headers,
                 "subject"
@@ -294,14 +301,15 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
             if not subject:
                 subject = "No Subject"
 
+            # Get email body
             body = get_email_body(payload)
 
-            # Use subject + body for prediction
+            # Combine subject and body
             email_text = (
                 subject + " " + body
             ).strip()
 
-            # If body is unavailable, use Gmail snippet
+            # Use Gmail snippet if body is unavailable
             if not email_text:
 
                 email_text = email_data.get(
@@ -309,6 +317,7 @@ if st.button("🔍 Detect Spam in All Gmail Emails"):
                     ""
                 )
 
+            # Predict using trained model
             prediction = model.predict(
                 [email_text]
             )[0]
