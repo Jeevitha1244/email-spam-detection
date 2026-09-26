@@ -196,9 +196,15 @@ if st.button("🔍 Detect Spam in All Gmail Messages"):
 
     except HttpError as e:
 
-        st.error(
-            "Gmail API error. Please log out and sign in again."
-        )
+        status = getattr(e.resp, "status", "Unknown")
+
+        try:
+            details = e.content.decode("utf-8", errors="ignore")
+        except Exception:
+            details = str(e)
+
+        st.error(f"Gmail API error ({status})")
+        st.code(details)
 
     except Exception as e:
 
